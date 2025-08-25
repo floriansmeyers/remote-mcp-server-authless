@@ -11,8 +11,10 @@ export class MyMCP extends McpAgent {
 		version: "1.0.0",
 	});
 
-	async init(env?: Env) {
-		const db = env?.DENUO_DB ? new DenuoDatabase(env.DENUO_DB) : null;
+	async init() {
+		// Access environment through the MCP framework's context
+		const environment = (this as any).env;
+		const db = environment?.DENUO_DB ? new DenuoDatabase(environment.DENUO_DB) : null;
 
 		// Search denuo.be articles
 		this.server.tool(
