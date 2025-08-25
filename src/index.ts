@@ -1,8 +1,8 @@
 import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { DenuoScraper } from "./scraper";
-import { DenuoDatabase } from "./database";
+import { ComprehensiveDenuoScraper } from "./scraper-v2";
+import { ComprehensiveDenuoDatabase } from "./database-v2";
 
 // Define our MCP agent with tools
 export class MyMCP extends McpAgent {
@@ -14,120 +14,241 @@ export class MyMCP extends McpAgent {
 	async init() {
 		// Access environment through the MCP framework's context
 		const environment = (this as any).env;
-		const db = environment?.DENUO_DB ? new DenuoDatabase(environment.DENUO_DB) : null;
+		const db = environment?.DENUO_DB ? new ComprehensiveDenuoDatabase(environment.DENUO_DB) : null;
 
-		// Search denuo.be articles
+		// 1. Search Denuo News
 		this.server.tool(
-			"search_denuo_articles",
+			"search_denuo_news",
 			{
-				query: z.string().describe("Search term for articles"),
+				query: z.string().describe("Search term for news articles"),
 				language: z.enum(["nl", "fr"]).optional().describe("Language filter"),
 				category: z.string().optional().describe("Category filter"),
 				limit: z.number().default(10).describe("Maximum number of results"),
 			},
 			async ({ query, language, category, limit }) => {
-				if (!db) {
-					return {
-						content: [{ type: "text", text: "Database not available" }],
-					};
-				}
+				if (!db) return { content: [{ type: "text", text: "Database not available" }] };
 
 				try {
-					const results = await db.searchArticles(
-						query,
-						language,
-						category,
-						limit,
-					);
+					const results = await db.searchNews(query, language, category, limit);
 					if (results.length === 0) {
-						return {
-							content: [
-								{
-									type: "text",
-									text: `No articles found for query: "${query}"`,
-								},
-							],
-						};
+						return { content: [{ type: "text", text: `No news found for query: "${query}"` }] };
 					}
 
 					const formatted = results
-						.map(
-							(article) =>
-								`**${article.title}** (${article.language.toUpperCase()})\n` +
-								`${article.summary || "No summary available"}\n` +
-								`Category: ${article.category || "Uncategorized"}\n` +
-								`Date: ${article.published_date || "Unknown"}\n` +
-								`URL: ${article.url}\n`,
+						.map(item =>
+							`**${item.title}** (${item.language.toUpperCase()})\n` +
+							`${item.summary || "No summary available"}\n` +
+							`Category: ${item.category || "Uncategorized"}\n` +
+							`Date: ${item.publication_date || "Unknown"}\n` +
+							`URL: ${item.url}\n`
 						)
 						.join("\n---\n\n");
 
-					return {
-						content: [
-							{
-								type: "text",
-								text: `Found ${results.length} articles:\n\n${formatted}`,
-							},
-						],
-					};
+					return { content: [{ type: "text", text: `Found ${results.length} news articles:\n\n${formatted}` }] };
 				} catch (error) {
-					return {
-						content: [
-							{ type: "text", text: `Error searching articles: ${error}` },
-						],
-					};
+					return { content: [{ type: "text", text: `Error searching news: ${error}` }] };
 				}
 			},
 		);
 
-		// Get recent denuo.be articles
+		// 2. Get Recent News
 		this.server.tool(
-			"get_denuo_recent_articles",
+			"get_denuo_recent_news",
 			{
 				language: z.enum(["nl", "fr"]).optional().describe("Language filter"),
 				limit: z.number().default(10).describe("Maximum number of results"),
 			},
 			async ({ language, limit }) => {
-				if (!db) {
-					return {
-						content: [{ type: "text", text: "Database not available" }],
-					};
-				}
+				if (!db) return { content: [{ type: "text", text: "Database not available" }] };
 
 				try {
-					const results = await db.getRecentArticles(language, limit);
+					const results = await db.getRecentNews(language, limit);
 					if (results.length === 0) {
-						return {
-							content: [{ type: "text", text: "No recent articles found" }],
-						};
+						return { content: [{ type: "text", text: "No recent news found" }] };
 					}
 
 					const formatted = results
-						.map(
-							(article) =>
-								`**${article.title}** (${article.language.toUpperCase()})\n` +
-								`${article.summary || "No summary available"}\n` +
-								`Category: ${article.category || "Uncategorized"}\n` +
-								`Date: ${article.published_date || "Unknown"}\n` +
-								`URL: ${article.url}\n`,
+						.map(item =>
+							`**${item.title}** (${item.language.toUpperCase()})\n` +
+							`${item.summary || "No summary available"}\n` +
+							`Category: ${item.category || "Uncategorized"}\n` +
+							`Date: ${item.publication_date || "Unknown"}\n` +
+							`URL: ${item.url}\n`
 						)
 						.join("\n---\n\n");
 
-					return {
-						content: [
-							{ type: "text", text: `Recent articles:\n\n${formatted}` },
-						],
-					};
+					return { content: [{ type: "text", text: `Recent news:\n\n${formatted}` }] };
 				} catch (error) {
-					return {
-						content: [
-							{ type: "text", text: `Error getting recent articles: ${error}` },
-						],
-					};
+					return { content: [{ type: "text", text: `Error getting recent news: ${error}` }] };
 				}
 			},
 		);
 
-		// Get denuo.be events
+		// 3. Search Standpunten (Position Papers)
+		this.server.tool(
+			"search_denuo_standpunten",
+			{
+				query: z.string().describe("Search term for position papers"),
+				year: z.string().optional().describe("Publication year filter"),
+				limit: z.number().default(10).describe("Maximum number of results"),
+			},
+			async ({ query, year, limit }) => {
+				if (!db) return { content: [{ type: "text", text: "Database not available" }] };
+
+				try {
+					const results = await db.searchStandpunten(query, year, limit);
+					if (results.length === 0) {
+						return { content: [{ type: "text", text: `No standpunten found for query: "${query}"` }] };
+					}
+
+					const formatted = results
+						.map(item =>
+							`**${item.title}**\n` +
+							`${item.description || "No description available"}\n` +
+							`Year: ${item.publication_year || "Unknown"}\n` +
+							`Type: ${item.document_type || "Document"}\n` +
+							`Language: ${item.language.toUpperCase()}\n` +
+							`URL: ${item.url}\n`
+						)
+						.join("\n---\n\n");
+
+					return { content: [{ type: "text", text: `Found ${results.length} standpunten:\n\n${formatted}` }] };
+				} catch (error) {
+					return { content: [{ type: "text", text: `Error searching standpunten: ${error}` }] };
+				}
+			},
+		);
+
+		// 4. Get All Standpunten
+		this.server.tool(
+			"get_all_denuo_standpunten",
+			{
+				limit: z.number().default(20).describe("Maximum number of results"),
+			},
+			async ({ limit }) => {
+				if (!db) return { content: [{ type: "text", text: "Database not available" }] };
+
+				try {
+					const results = await db.getAllStandpunten(limit);
+					if (results.length === 0) {
+						return { content: [{ type: "text", text: "No standpunten found" }] };
+					}
+
+					const formatted = results
+						.map(item =>
+							`**${item.title}**\n` +
+							`Year: ${item.publication_year || "Unknown"}\n` +
+							`Type: ${item.document_type || "Document"}\n` +
+							`URL: ${item.url}\n`
+						)
+						.join("\n---\n\n");
+
+					return { content: [{ type: "text", text: `All standpunten:\n\n${formatted}` }] };
+				} catch (error) {
+					return { content: [{ type: "text", text: `Error getting standpunten: ${error}` }] };
+				}
+			},
+		);
+
+		// 5. Search Dossiers
+		this.server.tool(
+			"search_denuo_dossiers",
+			{
+				query: z.string().describe("Search term for dossiers"),
+				category: z.string().optional().describe("Category filter"),
+				language: z.enum(["nl", "fr"]).optional().describe("Language filter"),
+				limit: z.number().default(10).describe("Maximum number of results"),
+			},
+			async ({ query, category, language, limit }) => {
+				if (!db) return { content: [{ type: "text", text: "Database not available" }] };
+
+				try {
+					const results = await db.searchDossiers(query, category, limit);
+					if (results.length === 0) {
+						return { content: [{ type: "text", text: `No dossiers found for query: "${query}"` }] };
+					}
+
+					const formatted = results
+						.map(item =>
+							`**${item.title}**\n` +
+							`${item.description || "No description available"}\n` +
+							`Categories: ${item.categories ? JSON.parse(item.categories).join(", ") : "None"}\n` +
+							`Language: ${item.language.toUpperCase()}\n` +
+							`URL: ${item.url}\n`
+						)
+						.join("\n---\n\n");
+
+					return { content: [{ type: "text", text: `Found ${results.length} dossiers:\n\n${formatted}` }] };
+				} catch (error) {
+					return { content: [{ type: "text", text: `Error searching dossiers: ${error}` }] };
+				}
+			},
+		);
+
+		// 6. Get All Dossiers
+		this.server.tool(
+			"get_all_denuo_dossiers",
+			{
+				limit: z.number().default(20).describe("Maximum number of results"),
+			},
+			async ({ limit }) => {
+				if (!db) return { content: [{ type: "text", text: "Database not available" }] };
+
+				try {
+					const results = await db.getAllDossiers(limit);
+					if (results.length === 0) {
+						return { content: [{ type: "text", text: "No dossiers found" }] };
+					}
+
+					const formatted = results
+						.map(item =>
+							`**${item.title}**\n` +
+							`Categories: ${item.categories ? JSON.parse(item.categories).join(", ") : "None"}\n` +
+							`Language: ${item.language.toUpperCase()}\n` +
+							`URL: ${item.url}\n`
+						)
+						.join("\n---\n\n");
+
+					return { content: [{ type: "text", text: `All dossiers:\n\n${formatted}` }] };
+				} catch (error) {
+					return { content: [{ type: "text", text: `Error getting dossiers: ${error}` }] };
+				}
+			},
+		);
+
+		// 7. Get Paritaire Comités
+		this.server.tool(
+			"get_denuo_committees",
+			{
+				limit: z.number().default(20).describe("Maximum number of results"),
+			},
+			async ({ limit }) => {
+				if (!db) return { content: [{ type: "text", text: "Database not available" }] };
+
+				try {
+					const results = await db.getAllCommittees();
+					if (results.length === 0) {
+						return { content: [{ type: "text", text: "No committees found" }] };
+					}
+
+					const formatted = results
+						.slice(0, limit)
+						.map(item =>
+							`**${item.psc_number}: ${item.title}**\n` +
+							`${item.description || "No description available"}\n` +
+							`Sector: ${item.sector || "Not specified"}\n` +
+							`URL: ${item.url}\n`
+						)
+						.join("\n---\n\n");
+
+					return { content: [{ type: "text", text: `Paritaire Comités:\n\n${formatted}` }] };
+				} catch (error) {
+					return { content: [{ type: "text", text: `Error getting committees: ${error}` }] };
+				}
+			},
+		);
+
+		// 8. Get denuo.be events
 		this.server.tool(
 			"get_denuo_events",
 			{
@@ -167,8 +288,11 @@ export class MyMCP extends McpAgent {
 							(event) =>
 								`**${event.title}**\n` +
 								`${event.description || "No description available"}\n` +
+								`Type: ${event.event_type || "Event"}\n` +
 								`Date: ${event.event_date || "TBD"}\n` +
-								`Location: ${event.location || "TBD"}\n` +
+								`Time: ${event.event_time || "TBD"}\n` +
+								`Location: ${event.location_name || "TBD"}\n` +
+								(event.location_address ? `Address: ${event.location_address}\n` : "") +
 								(event.url ? `URL: ${event.url}\n` : ""),
 						)
 						.join("\n---\n\n");
@@ -189,46 +313,167 @@ export class MyMCP extends McpAgent {
 			},
 		);
 
-		// Get denuo.be partners
+		// 9. Search Downloads
 		this.server.tool(
-			"get_denuo_partners",
+			"search_denuo_downloads",
+			{
+				query: z.string().describe("Search term for downloads"),
+				file_type: z.string().optional().describe("File type filter (e.g., pdf, doc)"),
+				limit: z.number().default(10).describe("Maximum number of results"),
+			},
+			async ({ query, file_type, limit }) => {
+				if (!db) return { content: [{ type: "text", text: "Database not available" }] };
+
+				try {
+					const results = await db.searchDownloads(query, file_type, limit);
+					if (results.length === 0) {
+						return { content: [{ type: "text", text: `No downloads found for query: "${query}"` }] };
+					}
+
+					const formatted = results
+						.map(item =>
+							`**${item.title}**\n` +
+							`${item.description || "No description available"}\n` +
+							`File Type: ${item.file_type || "Unknown"}\n` +
+							`Categories: ${item.categories ? JSON.parse(item.categories).join(", ") : "None"}\n` +
+							`Languages: ${item.languages_available || "Not specified"}\n` +
+							`Download: ${item.download_url}\n`
+						)
+						.join("\n---\n\n");
+
+					return { content: [{ type: "text", text: `Found ${results.length} downloads:\n\n${formatted}` }] };
+				} catch (error) {
+					return { content: [{ type: "text", text: `Error searching downloads: ${error}` }] };
+				}
+			},
+		);
+
+		// 10. Get All Downloads
+		this.server.tool(
+			"get_all_denuo_downloads",
 			{
 				limit: z.number().default(20).describe("Maximum number of results"),
 			},
 			async ({ limit }) => {
-				if (!db) {
-					return {
-						content: [{ type: "text", text: "Database not available" }],
-					};
-				}
+				if (!db) return { content: [{ type: "text", text: "Database not available" }] };
 
 				try {
-					const results = await db.getPartners(limit);
+					const results = await db.getAllDownloads(limit);
 					if (results.length === 0) {
-						return {
-							content: [{ type: "text", text: "No partners found" }],
-						};
+						return { content: [{ type: "text", text: "No downloads found" }] };
 					}
 
 					const formatted = results
-						.map(
-							(partner) =>
-								`**${partner.name}**\n` +
-								`${partner.description || "No description available"}\n` +
-								(partner.website ? `Website: ${partner.website}\n` : "") +
-								(partner.category ? `Category: ${partner.category}\n` : ""),
+						.map(item =>
+							`**${item.title}**\n` +
+							`File Type: ${item.file_type || "Unknown"}\n` +
+							`Categories: ${item.categories ? JSON.parse(item.categories).join(", ") : "None"}\n` +
+							`Download: ${item.download_url}\n`
 						)
 						.join("\n---\n\n");
 
-					return {
-						content: [{ type: "text", text: `Partners:\n\n${formatted}` }],
-					};
+					return { content: [{ type: "text", text: `All downloads:\n\n${formatted}` }] };
 				} catch (error) {
-					return {
-						content: [
-							{ type: "text", text: `Error getting partners: ${error}` },
-						],
-					};
+					return { content: [{ type: "text", text: `Error getting downloads: ${error}` }] };
+				}
+			},
+		);
+
+		// 11. Get About Info
+		this.server.tool(
+			"get_denuo_about_info",
+			{
+				section_type: z.string().optional().describe("Section type filter (e.g., mission, contact, team)"),
+			},
+			async ({ section_type }) => {
+				if (!db) return { content: [{ type: "text", text: "Database not available" }] };
+
+				try {
+					const results = await db.getAboutInfo(section_type);
+					if (results.length === 0) {
+						return { content: [{ type: "text", text: section_type ? `No about info found for section: "${section_type}"` : "No about info found" }] };
+					}
+
+					const formatted = results
+						.map(item =>
+							`**${item.section_title}**\n` +
+							`${item.content}\n` +
+							`Section Type: ${item.section_type || "General"}\n` +
+							(item.url ? `URL: ${item.url}\n` : "")
+						)
+						.join("\n---\n\n");
+
+					return { content: [{ type: "text", text: `About Denuo:\n\n${formatted}` }] };
+				} catch (error) {
+					return { content: [{ type: "text", text: `Error getting about info: ${error}` }] };
+				}
+			},
+		);
+
+		// 12. Search Press Articles
+		this.server.tool(
+			"search_denuo_press_articles",
+			{
+				query: z.string().describe("Search term for press articles"),
+				source: z.string().optional().describe("Source filter (e.g., 'De Morgen')"),
+				language: z.enum(["nl", "fr"]).optional().describe("Language filter"),
+				limit: z.number().default(10).describe("Maximum number of results"),
+			},
+			async ({ query, source, language, limit }) => {
+				if (!db) return { content: [{ type: "text", text: "Database not available" }] };
+
+				try {
+					const results = await db.searchPressArticles(query, source, limit);
+					if (results.length === 0) {
+						return { content: [{ type: "text", text: `No press articles found for query: "${query}"` }] };
+					}
+
+					const formatted = results
+						.map(item =>
+							`**${item.title}** (${item.language.toUpperCase()})\n` +
+							`${item.summary || "No summary available"}\n` +
+							`Source: ${item.source || "Unknown"}\n` +
+							`Categories: ${item.categories ? JSON.parse(item.categories).join(", ") : "None"}\n` +
+							`Date: ${item.publication_date || "Unknown"}\n` +
+							`URL: ${item.url}\n`
+						)
+						.join("\n---\n\n");
+
+					return { content: [{ type: "text", text: `Found ${results.length} press articles:\n\n${formatted}` }] };
+				} catch (error) {
+					return { content: [{ type: "text", text: `Error searching press articles: ${error}` }] };
+				}
+			},
+		);
+
+		// 13. Get Recent Press Articles
+		this.server.tool(
+			"get_denuo_recent_press_articles",
+			{
+				limit: z.number().default(10).describe("Maximum number of results"),
+			},
+			async ({ limit }) => {
+				if (!db) return { content: [{ type: "text", text: "Database not available" }] };
+
+				try {
+					const results = await db.getRecentPressArticles(limit);
+					if (results.length === 0) {
+						return { content: [{ type: "text", text: "No recent press articles found" }] };
+					}
+
+					const formatted = results
+						.map(item =>
+							`**${item.title}** (${item.language.toUpperCase()})\n` +
+							`${item.summary || "No summary available"}\n` +
+							`Source: ${item.source || "Unknown"}\n` +
+							`Date: ${item.publication_date || "Unknown"}\n` +
+							`URL: ${item.url}\n`
+						)
+						.join("\n---\n\n");
+
+					return { content: [{ type: "text", text: `Recent press articles:\n\n${formatted}` }] };
+				} catch (error) {
+					return { content: [{ type: "text", text: `Error getting recent press articles: ${error}` }] };
 				}
 			},
 		);
@@ -281,33 +526,68 @@ export class MyMCP extends McpAgent {
 }
 
 async function scrapeDenuoContent(db: D1Database): Promise<void> {
-	const scraper = new DenuoScraper();
-	const database = new DenuoDatabase(db);
+	const scraper = new ComprehensiveDenuoScraper();
+	const database = new ComprehensiveDenuoDatabase(db);
 
 	try {
-		// Scrape articles in both languages
-		const [dutchArticles, frenchArticles, events, partners] = await Promise.all(
-			[
-				scraper.scrapeArticles("nl"),
-				scraper.scrapeArticles("fr"),
-				scraper.scrapeEvents(),
-				scraper.scrapePartners(),
-			],
-		);
+		console.log("Starting comprehensive denuo.be content scraping...");
+
+		// Scrape all content types in parallel
+		const [
+			dutchNews, frenchNews,
+			standpunten,
+			dossiers,
+			committees,
+			events,
+			downloads,
+			aboutInfo,
+			pressArticles
+		] = await Promise.all([
+			scraper.scrapeNews("nl"),
+			scraper.scrapeNews("fr"),
+			scraper.scrapeStandpunten(),
+			scraper.scrapeDossiers(),
+			scraper.scrapeCommittees(),
+			scraper.scrapeEvents(),
+			scraper.scrapeDownloads(),
+			scraper.scrapeAboutInfo(),
+			scraper.scrapePressArticles()
+		]);
 
 		// Store all content in parallel
 		await Promise.all([
-			database.storeArticles(dutchArticles),
-			database.storeArticles(frenchArticles),
+			database.storeNews([...dutchNews, ...frenchNews]),
+			database.storeStandpunten(standpunten),
+			database.storeDossiers(dossiers),
+			database.storeCommittees(committees),
 			database.storeEvents(events),
-			database.storePartners(partners),
+			database.storeDownloads(downloads),
+			database.storeAboutInfo(aboutInfo),
+			database.storePressArticles(pressArticles)
 		]);
 
-		console.log(
-			`Successfully scraped: ${dutchArticles.length + frenchArticles.length} articles, ${events.length} events, ${partners.length} partners`,
+		const totalItems = 
+			dutchNews.length + frenchNews.length +
+			standpunten.length +
+			dossiers.length +
+			committees.length +
+			events.length +
+			downloads.length +
+			aboutInfo.length +
+			pressArticles.length;
+
+		console.log(`Successfully scraped ${totalItems} total items:
+			- News: ${dutchNews.length + frenchNews.length}
+			- Standpunten: ${standpunten.length}
+			- Dossiers: ${dossiers.length}
+			- Committees: ${committees.length}
+			- Events: ${events.length}
+			- Downloads: ${downloads.length}
+			- About Info: ${aboutInfo.length}
+			- Press Articles: ${pressArticles.length}`
 		);
 	} catch (error) {
-		console.error("Error scraping denuo.be content:", error);
+		console.error("Error scraping comprehensive denuo.be content:", error);
 	}
 }
 
@@ -327,6 +607,15 @@ export default {
 			return MyMCP.serve("/mcp").fetch(request, env, ctx);
 		}
 
+		if (url.pathname === "/scrape" && request.method === "POST") {
+			if (!env.DENUO_DB) {
+				return new Response("Database not available", { status: 500 });
+			}
+			
+			console.log("Manual scraping triggered");
+			ctx.waitUntil(scrapeDenuoContent(env.DENUO_DB));
+			return new Response("Scraping started", { status: 200 });
+		}
 
 		return new Response("Not found", { status: 404 });
 	},
