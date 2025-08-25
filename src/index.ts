@@ -1,8 +1,8 @@
 import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { ComprehensiveDenuoScraper } from "./scraper-v2";
-import { ComprehensiveDenuoDatabase } from "./database-v2";
+import { ComprehensiveDenuoScraper } from "./scraper";
+import { ComprehensiveDenuoDatabase } from "./database";
 
 // Define our MCP agent with tools
 export class MyMCP extends McpAgent {
@@ -253,7 +253,7 @@ export class MyMCP extends McpAgent {
 			"get_denuo_events",
 			{
 				upcoming_only: z
-					.boolean()
+					.union([z.boolean(), z.string().transform(val => val === "true")])
 					.default(true)
 					.describe("Show only upcoming events"),
 				limit: z.number().default(5).describe("Maximum number of results"),
