@@ -22,6 +22,16 @@
 			}
 		]
 	},
+	"d1_databases": [
+		{
+			"binding": "DENUO_DB",
+			"database_name": "denuo-content",
+			"database_id": "8d4755fc-bd54-404a-99e1-e2b5019f2fe9"
+		}
+	],
+	"triggers": {
+		"crons": ["0 */6 * * *"]
+	},
 	"observability": {
 		"enabled": true
 	}
