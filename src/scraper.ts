@@ -32,17 +32,22 @@ export class DenuoScraper {
 	async scrapeArticles(language: "nl" | "fr"): Promise<ScrapedArticle[]> {
 		const url =
 			language === "nl"
-				? `${this.baseUrl}/nl/nieuws`
-				: `${this.baseUrl}/fr/actualites`;
+				? `${this.baseUrl}/nl/denuo-nieuws`
+				: `${this.baseUrl}/fr/actualites-denuo`;
 
 		try {
+			console.log(`Fetching articles from: ${url}`);
 			const response = await fetch(url);
 			if (!response.ok) {
+				console.error(`HTTP error ${response.status} for ${url}`);
 				throw new Error(`Failed to fetch ${url}: ${response.status}`);
 			}
 
 			const html = await response.text();
-			return this.parseArticles(html, language, url);
+			console.log(`Fetched ${html.length} characters of HTML for ${language} articles`);
+			const articles = this.parseArticles(html, language, url);
+			console.log(`Parsed ${articles.length} articles for ${language}`);
+			return articles;
 		} catch (error) {
 			console.error(`Error scraping articles for ${language}:`, error);
 			return [];
@@ -50,16 +55,21 @@ export class DenuoScraper {
 	}
 
 	async scrapeEvents(): Promise<ScrapedEvent[]> {
-		const url = `${this.baseUrl}/agenda`;
+		const url = `${this.baseUrl}/nl/agenda`;
 
 		try {
+			console.log(`Fetching events from: ${url}`);
 			const response = await fetch(url);
 			if (!response.ok) {
+				console.error(`HTTP error ${response.status} for ${url}`);
 				throw new Error(`Failed to fetch ${url}: ${response.status}`);
 			}
 
 			const html = await response.text();
-			return this.parseEvents(html);
+			console.log(`Fetched ${html.length} characters of HTML for events`);
+			const events = this.parseEvents(html);
+			console.log(`Parsed ${events.length} events`);
+			return events;
 		} catch (error) {
 			console.error("Error scraping events:", error);
 			return [];
@@ -67,16 +77,21 @@ export class DenuoScraper {
 	}
 
 	async scrapePartners(): Promise<ScrapedPartner[]> {
-		const url = `${this.baseUrl}/partners`;
+		const url = `${this.baseUrl}/nl/partners`;
 
 		try {
+			console.log(`Fetching partners from: ${url}`);
 			const response = await fetch(url);
 			if (!response.ok) {
+				console.error(`HTTP error ${response.status} for ${url}`);
 				throw new Error(`Failed to fetch ${url}: ${response.status}`);
 			}
 
 			const html = await response.text();
-			return this.parsePartners(html);
+			console.log(`Fetched ${html.length} characters of HTML for partners`);
+			const partners = this.parsePartners(html);
+			console.log(`Parsed ${partners.length} partners`);
+			return partners;
 		} catch (error) {
 			console.error("Error scraping partners:", error);
 			return [];
@@ -90,30 +105,41 @@ export class DenuoScraper {
 	): ScrapedArticle[] {
 		const articles: ScrapedArticle[] = [];
 
-		// Use HTMLRewriter-compatible parsing
-		// This is a simplified approach - in production you'd use HTMLRewriter
-		const articleMatches =
-			html.match(/<article[^>]*>[\s\S]*?<\/article>/gi) || [];
+		// Try multiple patterns to find articles/news items
+		const patterns = [
+			/<article[^>]*>[\s\S]*?<\/article>/gi,
+			/<div[^>]*class="[^"]*news[^"]*"[^>]*>[\s\S]*?<\/div>/gi,
+			/<div[^>]*class="[^"]*item[^"]*"[^>]*>[\s\S]*?<\/div>/gi,
+			/<div[^>]*class="[^"]*post[^"]*"[^>]*>[\s\S]*?<\/div>/gi,
+		];
 
-		for (const articleHtml of articleMatches) {
-			const title = this.extractText(
-				articleHtml,
-				/<h[1-6][^>]*>(.*?)<\/h[1-6]>/i,
-			);
-			const content = this.extractText(articleHtml, /<p[^>]*>(.*?)<\/p>/gi);
-			const urlMatch = articleHtml.match(/href="([^"]*)"/) || [];
-			const url = urlMatch[1] ? this.resolveUrl(urlMatch[1]) : baseUrl;
+		for (const pattern of patterns) {
+			const matches = html.match(pattern) || [];
+			
+			for (const matchHtml of matches) {
+				const title = this.extractText(matchHtml, /<h[1-6][^>]*>(.*?)<\/h[1-6]>/i) ||
+							  this.extractText(matchHtml, /<a[^>]*>(.*?)<\/a>/i);
+				
+				const content = this.extractText(matchHtml, /<p[^>]*>(.*?)<\/p>/gi) ||
+							   this.extractText(matchHtml, /<div[^>]*class="[^"]*content[^"]*"[^>]*>(.*?)<\/div>/i);
+				
+				const urlMatch = matchHtml.match(/href="([^"]*)"/) || [];
+				const url = urlMatch[1] ? this.resolveUrl(urlMatch[1]) : baseUrl;
 
-			if (title && content) {
-				articles.push({
-					title: this.cleanText(title),
-					content: this.cleanText(content),
-					summary: this.generateSummary(content),
-					url,
-					language,
-					category: this.extractCategory(articleHtml),
-				});
+				if (title && title.length > 3) { // Basic validation
+					articles.push({
+						title: this.cleanText(title),
+						content: content ? this.cleanText(content) : this.cleanText(title),
+						summary: content ? this.generateSummary(content) : this.generateSummary(title),
+						url,
+						language,
+						category: this.extractCategory(matchHtml),
+					});
+				}
 			}
+
+			// If we found articles with this pattern, use them
+			if (articles.length > 0) break;
 		}
 
 		return articles;
@@ -122,25 +148,35 @@ export class DenuoScraper {
 	private parseEvents(html: string): ScrapedEvent[] {
 		const events: ScrapedEvent[] = [];
 
-		// Event parsing logic - simplified
-		const eventMatches =
-			html.match(/<div[^>]*class="[^"]*event[^"]*"[^>]*>[\s\S]*?<\/div>/gi) ||
-			[];
+		// Try multiple patterns to find events
+		const patterns = [
+			/<div[^>]*class="[^"]*event[^"]*"[^>]*>[\s\S]*?<\/div>/gi,
+			/<div[^>]*class="[^"]*agenda[^"]*"[^>]*>[\s\S]*?<\/div>/gi,
+			/<article[^>]*>[\s\S]*?<\/article>/gi,
+			/<li[^>]*>[\s\S]*?<\/li>/gi,
+		];
 
-		for (const eventHtml of eventMatches) {
-			const title = this.extractText(
-				eventHtml,
-				/<h[1-6][^>]*>(.*?)<\/h[1-6]>/i,
-			);
-			const description = this.extractText(eventHtml, /<p[^>]*>(.*?)<\/p>/i);
+		for (const pattern of patterns) {
+			const matches = html.match(pattern) || [];
+			
+			for (const matchHtml of matches) {
+				const title = this.extractText(matchHtml, /<h[1-6][^>]*>(.*?)<\/h[1-6]>/i) ||
+							  this.extractText(matchHtml, /<a[^>]*>(.*?)<\/a>/i);
+				
+				const description = this.extractText(matchHtml, /<p[^>]*>(.*?)<\/p>/i);
+				const dateMatch = matchHtml.match(/\b\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}\b/);
 
-			if (title) {
-				events.push({
-					title: this.cleanText(title),
-					description: description ? this.cleanText(description) : undefined,
-					language: "nl", // Default, would need more logic to detect
-				});
+				if (title && title.length > 3) {
+					events.push({
+						title: this.cleanText(title),
+						description: description ? this.cleanText(description) : undefined,
+						eventDate: dateMatch ? dateMatch[0] : undefined,
+						language: "nl",
+					});
+				}
 			}
+
+			if (events.length > 0) break;
 		}
 
 		return events;
@@ -149,28 +185,36 @@ export class DenuoScraper {
 	private parsePartners(html: string): ScrapedPartner[] {
 		const partners: ScrapedPartner[] = [];
 
-		// Partner parsing logic - simplified
-		const partnerMatches =
-			html.match(/<div[^>]*class="[^"]*partner[^"]*"[^>]*>[\s\S]*?<\/div>/gi) ||
-			[];
+		// Try multiple patterns to find partners/members
+		const patterns = [
+			/<div[^>]*class="[^"]*partner[^"]*"[^>]*>[\s\S]*?<\/div>/gi,
+			/<div[^>]*class="[^"]*member[^"]*"[^>]*>[\s\S]*?<\/div>/gi,
+			/<li[^>]*>[\s\S]*?<\/li>/gi,
+			/<img[^>]*alt="[^"]*"[^>]*>/gi, // Partner logos
+		];
 
-		for (const partnerHtml of partnerMatches) {
-			const name = this.extractText(
-				partnerHtml,
-				/<h[1-6][^>]*>(.*?)<\/h[1-6]>/i,
-			);
-			const logoMatch = partnerHtml.match(/<img[^>]*src="([^"]*)"[^>]*>/i);
-			const websiteMatch = partnerHtml.match(/<a[^>]*href="([^"]*)"[^>]*>/i);
+		for (const pattern of patterns) {
+			const matches = html.match(pattern) || [];
+			
+			for (const matchHtml of matches) {
+				// Try to get name from various sources
+				const name = this.extractText(matchHtml, /<h[1-6][^>]*>(.*?)<\/h[1-6]>/i) ||
+							 this.extractText(matchHtml, /alt="([^"]+)"/i) ||
+							 this.extractText(matchHtml, /<a[^>]*title="([^"]+)"[^>]*>/i);
+				
+				const logoMatch = matchHtml.match(/<img[^>]*src="([^"]*)"[^>]*>/i);
+				const websiteMatch = matchHtml.match(/<a[^>]*href="([^"]*)"[^>]*>/i);
 
-			if (name) {
-				partners.push({
-					name: this.cleanText(name),
-					logoUrl: logoMatch?.[1] ? this.resolveUrl(logoMatch[1]) : undefined,
-					website: websiteMatch?.[1]
-						? this.resolveUrl(websiteMatch[1])
-						: undefined,
-				});
+				if (name && name.length > 1 && !name.toLowerCase().includes('logo')) {
+					partners.push({
+						name: this.cleanText(name),
+						logoUrl: logoMatch?.[1] ? this.resolveUrl(logoMatch[1]) : undefined,
+						website: websiteMatch?.[1] ? this.resolveUrl(websiteMatch[1]) : undefined,
+					});
+				}
 			}
+
+			if (partners.length > 0) break;
 		}
 
 		return partners;

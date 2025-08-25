@@ -17,10 +17,10 @@ export class DenuoDatabase {
 			stmt.bind(
 				article.title,
 				article.content,
-				article.summary,
+				article.summary || null,
 				article.url,
-				article.publishedDate,
-				article.category,
+				article.publishedDate || null,
+				article.category || null,
 				article.language,
 			),
 		);
@@ -44,10 +44,10 @@ export class DenuoDatabase {
 		const batch = events.map((event) =>
 			stmt.bind(
 				event.title,
-				event.description,
-				event.eventDate,
-				event.location,
-				event.url,
+				event.description || null,
+				event.eventDate || null,
+				event.location || null,
+				event.url || null,
 				event.language,
 			),
 		);
@@ -68,10 +68,10 @@ export class DenuoDatabase {
 		const batch = partners.map((partner) =>
 			stmt.bind(
 				partner.name,
-				partner.description,
-				partner.website,
-				partner.logoUrl,
-				partner.category,
+				partner.description || null,
+				partner.website || null,
+				partner.logoUrl || null,
+				partner.category || null,
 			),
 		);
 
@@ -208,7 +208,7 @@ export class DenuoDatabase {
             INSERT OR REPLACE INTO scrape_metadata (section, last_scraped, status, error_message)
             VALUES (?1, CURRENT_TIMESTAMP, ?2, ?3)
         `)
-			.bind(section, status, errorMessage)
+			.bind(section, status, errorMessage || null)
 			.run();
 	}
 
